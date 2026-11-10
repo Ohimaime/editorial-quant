@@ -1,26 +1,111 @@
 @import "tailwindcss";
 
+/* ── High-Stakes Broadcast tokens ─────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --hs-canvas: #05080f; /* Deep Midnight — base canvas */
+  --hs-console: #0a101d; /* Broadcast Navy — elevated console / module */
+  --hs-recessed: #03050a; /* Abyssal Slate — recessed telemetry */
+  --hs-hairline: #162032; /* Midnight Hairline — 1px structure */
+  --hs-ink: #fafafa; /* Titanium White — primary ink */
+  --hs-silver: #8a99ad; /* Broadcast Silver — secondary telemetry */
+  --hs-steel: #475569; /* Deep Steel — muted index */
+  --hs-lime: #ccff00; /* Electric Lime — positive / active / +EV / selected */
+  --hs-fuchsia: #ff00ff; /* Fuchsia — negative delta / down-tick / alert */
+
+  /* Display stack: Runiga (bound via next/font/local in app/layout.tsx as
+     --font-broadcast-display; the bare names only match locally installed
+     copies), then a sans-serif last resort. */
+  --font-display: "Runiga", "Adore Sans", var(--font-broadcast-display), sans-serif;
+
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+.font-display {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: -0.03em;
+  line-height: 0.82;
+  /* Anton ships one weight: never fake-bold it when `font-black` is applied. */
+  font-synthesis-weight: none;
+}
+
+/* Outline display type: crisp 1px Titanium contour over a faint fill. */
+.stroke-text {
+  -webkit-text-stroke: 1px rgb(250 250 250 / 0.45);
+  paint-order: stroke fill;
+}
+
+/* Horizontal tracks and the ticket strip scroll without a visible bar. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  /* Hard guarantees: zero radius, tabular numerals everywhere. */
+  *,
+  *::before,
+  *::after {
+    border-radius: 0;
+  }
+
+  /* 100vh locked cockpit: the document itself never scrolls. */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: var(--hs-canvas);
+  }
+
+  body {
+    color: var(--hs-ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background: var(--hs-lime);
+    color: var(--hs-canvas);
+  }
+
+  :focus-visible {
+    outline: 1px solid var(--hs-lime);
+    outline-offset: -1px;
+  }
+}
+
+/* QuantCursor replaces the system cursor on fine pointers only. */
+@media (pointer: fine) {
+  * {
+    cursor: none !important;
+  }
+}
+
+/* Deterministic 2-step pulse for status squares (no easing, terminal blink). */
+@keyframes eq-pulse {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
+.eq-pulse {
+  animation: eq-pulse 1.2s steps(1, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eq-pulse {
+    animation: none;
+  }
 }
