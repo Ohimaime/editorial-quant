@@ -65,10 +65,11 @@ tablets, so the cockpit switches layout at `lg`, not `md`.
 |---|---|---|
 | Track | `px-0 gap-0`, height `100dvh − 48 − 128` | `px-[10vw] gap-8`, height `100dvh − 48 − 96` |
 | Console | `w-screen`, `flex-col`: poster (`h-[clamp(96px,18dvh,200px)]`) on top, deck below; `max-h-full overflow-y-auto` guard | `w-[80vw] h-[86%]`, 40/60 `grid-cols-12` |
-| Poster | display codes at `min(4.5rem, (100cqh − 4.5rem)/0.95, (100cqw − 3rem)/4.4)` (away top-left, home right above the lockup); one-row lockup (badge · score · id) | full poster with display codes |
-| Team rows | name/score strip above full-width odds thirds (`lg:contents` wrapper) | 4-col row |
+| Poster | `h-[clamp(96px,calc(100dvh-460px),45dvh)]` (absorbs the slack freed by the declutter); display codes at `min(4.5rem, (100cqh − 4.5rem)/0.95, (100cqw − 3rem)/4.4)` (away top-left, home right above the lockup); one-row lockup (badge · score · id) | full poster with display codes |
+| Team rows | `grid-cols-[3.5rem_repeat(3,1fr)]`: display team code column + SPREAD / ML / TOTAL. Names, records, per-row score, console header and the odds tick/EV micro-row are hidden | 4-col row (name/record/score strip + 3 odds) |
 | Odds numerals | `text-2xl leading-none` | `text-3xl` → `xl:text-4xl` |
-| Deep Telemetry | **hidden**: a swipeable matrix nested in the horizontal snap track would fight the console swipe | visible (28%) |
+| Deep Telemetry | collapsed behind a `[ + ] VIEW TELEMETRY` accordion (console-local `useState`); expands *vertically* inside the console (2-col grid + game status + full team names) and scrolls the console to it. Never a horizontal matrix: it would fight the console swipe | visible (28%) |
+| Step arrows | md → lg: `ConsoleArrow` pair inside each console's poster at its vertical centre (static index, no store subscription); hidden on phones | `TrackAffordances` leaf: 48px arrows centred in the 10vw gutters + edge masks |
 | Top bar | market tabs + `01 / 06`; pills and marquee hidden; `pr-12` reserves the glossary corner | full |
 | Glossary trigger | 48×48 `?` in the top bar's right corner; panel = full-width sheet below the bar, scrolls | floating bottom-left, vertically centred in the console→dock gap; panel max-height + scroll |
 | Dock | `h-32`, 2 rows: bankroll + Kelly / 3 readouts + ENGAGE (shows leg count); ticket strip hidden | `h-24`, 12 columns |
@@ -99,7 +100,10 @@ deep), because extensions such as Grammarly inject attributes before React hydra
    hairlines, no shadows or blur. Depth is surface contrast (`#05080F` canvas and poster ·
    `#0A101D` console deck · `#03050A` recessed telemetry). The **only** gradient is the
    console poster's duotone vignette (`bg-gradient-to-t from-[#05080F] via-transparent
-   to-[#05080F]/70`), which fuses the photograph into the canvas.
+   to-[#05080F]/70`), which fuses the photograph into the canvas. **Second sanctioned
+   gradient:** the track's lg+ edge masks (`w-[10vw] bg-gradient-to-l|r from-[#05080F]
+   to-transparent`) over the peek gutters, a scroll-overflow affordance that drops on the
+   side with nothing further to show.
 7. **No soft fades on data.** Market switches and the boot release are `0ms` cuts: no
    `opacity` tweens, no `transition-opacity`, no `AnimatePresence` on data. Motion on
    swapped data is the glyph decode (Pattern D) only. Photographs swap by `visibility`
@@ -471,8 +475,9 @@ exactly on a console.
 | Input | Handling |
 |---|---|
 | Trackpad horizontal swipe, `Shift + Wheel` | Native: horizontal deltas pass through and `snap-mandatory` lands on a console. The handler returns early when `abs(deltaX) ≥ abs(deltaY)` or `shiftKey`. |
-| Vertical mouse wheel | Native `wheel` listener with `{ passive: false }`: `preventDefault()`, accumulate `deltaY`, step **one console** once `abs(acc) ≥ WHEEL_STEP` (40), at most once per `WHEEL_COOLDOWN_MS` (420). The accumulator resets after 180ms of silence. |
+| Vertical mouse wheel | Native `wheel` listener with `{ passive: false }` **on the stage wrapper** (track + affordances), so it also works over the gutter arrows. If the target console scrolls vertically (mobile telemetry open) and can move in that direction, the event passes through. Otherwise: `preventDefault()`, accumulate `deltaY`, step **one console** once `abs(acc) ≥ WHEEL_STEP` (40), at most once per `WHEEL_COOLDOWN_MS` (420). The accumulator resets after 180ms of silence. |
 | `←` / `→` | Window `keydown` → `jumpToConsole(active ± 1)` (ignored inside inputs). |
+| Edge arrows (`ConsoleArrow`) | `stepConsole(±1)` → `jumpToConsole`; disabled at either end. |
 | Quick-jump pills `01`–`06` (Tier 1) | `jumpToConsole(i)` |
 
 **Why not `scrollLeft += e.deltaY`:** under `snap-mandatory`, Chrome re-snaps after
@@ -2103,6 +2108,17 @@ export const useAppStore = create<AppState>((set) => ({
 
 This is the one place `AnimatePresence` and an `opacity` tween are allowed: it is
 reference chrome, never market data.
+
+### `WelcomeBriefing` (`components/dashboard/WelcomeBriefing.tsx`)
+
+First-run operator briefing: "HIGH-STAKES BROADCAST TERMINAL" plus three steps
+(Navigate · Read the edge · Execute) and an `ENTER TERMINAL` CTA (lime fill,
+`MagneticWrapper hitArea="parent"`). It renders only once `isBooted` is true, so it's
+client-only and causes no hydration mismatch. It opens on the boot's 0ms cut and closes
+with a 0ms cut (no fade). Dismissal persists in `localStorage["eq:briefing-dismissed"]`
+(try/catch, so blocked storage just means it shows again). While open (`z-[90]`, under
+the boot's `z-[100]`) a document capture-phase `keydown` swallows `← → ?`, traps Tab on
+the CTA, and closes on Escape.
 
 ### Reference implementation — `components/dashboard/QuantGlossary.tsx`
 

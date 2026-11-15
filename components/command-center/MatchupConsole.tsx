@@ -9,13 +9,20 @@
  *           score / clock / venue lockup.
  *   RIGHT — 3× scale execution deck (72%) over a recessed telemetry
  *           sub-panel (28%).
+ *
+ * Below lg the default view is only: photo poster (display codes + score
+ * lockup) and the two odds rows (team code | SPREAD | ML | TOTAL). The status
+ * header, team names/records, tick/EV micro-rows and Deep Telemetry fold into
+ * a "VIEW TELEMETRY" accordion at the foot of the console.
  */
 
 import Image from "next/image";
-import { memo } from "react";
+import { memo, useId, useRef, useState } from "react";
+import { ConsoleArrow } from "@/components/command-center/ConsoleArrow";
 import { InteractiveOddsButton } from "@/components/command-center/InteractiveOddsButton";
 import { DecodeText } from "@/components/motion/ZeroLatencyGlyphDecode";
 import {
+  CONSOLE_COUNT,
   MARKET_DATA,
   bestEdge,
   formatSpread,
@@ -56,7 +63,7 @@ function CampaignStage({ m, index }: { m: Matchup; index: number }) {
   const score = m.away.score === null || m.home.score === null ? "— : —" : `${m.away.score} — ${m.home.score}`;
 
   return (
-    <div className="group relative col-span-5 h-[clamp(96px,18dvh,200px)] shrink-0 overflow-hidden bg-[#05080F] select-none [container-type:size] lg:h-auto">
+    <div className="group relative col-span-5 h-[clamp(96px,calc(100dvh-460px),45dvh)] shrink-0 overflow-hidden bg-[#05080F] select-none [container-type:size] lg:h-auto">
       {/* Photography: every market's frame for this slot is mounted up front and
           toggled with `visibility`, so a market switch is a 0ms cut — no blank
           frame while a new image loads. */}
@@ -102,6 +109,12 @@ function CampaignStage({ m, index }: { m: Matchup; index: number }) {
         index={0}
         className="font-display stroke-text pointer-events-none absolute top-3 left-4 text-[min(4.5rem,calc((100cqh_-_4.5rem)/0.95),calc((100cqw_-_3rem)/4.4))] lg:top-12 lg:left-8 lg:text-[min(9rem,calc((100cqw_-_4rem)/2.1),calc((100cqh_-_17rem)/1.65))] leading-[0.8] font-black tracking-[-0.03em] whitespace-nowrap text-[#FAFAFA]/15 xl:text-[min(12rem,calc((100cqw_-_4rem)/2.1),calc((100cqh_-_17rem)/1.65))]"
       />
+
+      {/* Tablet (md → lg): consoles are full-width, so the step arrows live on the
+          poster's vertical centre, clear of the odds deck. Index is static per
+          console, so no store subscription is needed. */}
+      <ConsoleArrow dir={-1} disabled={index === 0} className="absolute top-1/2 left-3 hidden -translate-y-1/2 md:flex lg:hidden" />
+      <ConsoleArrow dir={1} disabled={index === CONSOLE_COUNT - 1} className="absolute top-1/2 right-3 hidden -translate-y-1/2 md:flex lg:hidden" />
 
       {/* Bottom stack: home code pinned right (~2rem visible padding) and always directly
           ABOVE the lockup, at any viewport height. */}
@@ -168,11 +181,17 @@ function TeamRow({
   const k = (col: string) => `${m.league}-${m.id}-${col}-${side}`;
 
   return (
-    <div className="flex min-h-0 flex-col lg:grid lg:flex-1 lg:grid-cols-4 lg:divide-x lg:divide-[#162032]">
-      {/* Below lg: a compact name/score strip above full-width odds thirds. */}
-      <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[#162032] px-4 py-2 lg:flex-col lg:items-stretch lg:justify-between lg:border-b-0 lg:px-5 lg:py-3.5">
+    <div className="grid min-h-0 grid-cols-[3.5rem_repeat(3,minmax(0,1fr))] divide-x divide-[#162032] lg:flex-1 lg:grid-cols-4">
+      {/* Below lg: a narrow team-code column; from lg: the full name/record/score strip. */}
+      <div className="flex min-w-0 flex-col items-center justify-center lg:items-stretch lg:justify-between lg:px-5 lg:py-3.5">
+        <DecodeText
+          as="div"
+          text={team.code}
+          index={0}
+          className={`font-display text-xl leading-none lg:hidden ${away ? "text-[#FAFAFA]" : "text-[#CCFF00]"}`}
+        />
         <span className="font-mono text-[10px] tracking-[0.2em] text-[#475569] uppercase max-lg:hidden">{away ? "Away" : "Home"}</span>
-        <div className="min-w-0">
+        <div className="min-w-0 max-lg:hidden">
           <DecodeText as="div" text={team.name} index={0} className="text-sm leading-tight font-semibold text-[#FAFAFA]" />
           <DecodeText
             as="div"
@@ -185,11 +204,9 @@ function TeamRow({
           as="div"
           text={team.score === null ? "—" : String(team.score)}
           index={2}
-          className="shrink-0 font-mono text-2xl font-light text-[#FAFAFA] tabular-nums lg:text-4xl xl:text-5xl"
+          className="shrink-0 font-mono font-light text-[#FAFAFA] tabular-nums max-lg:hidden lg:text-4xl xl:text-5xl"
         />
       </div>
-      {/* lg:contents → on desktop the buttons join the parent 4-col grid. */}
-      <div className="grid grid-cols-3 divide-x divide-[#162032] lg:contents">
       <InteractiveOddsButton
         key={k("spread")}
         selection={spread}
@@ -216,7 +233,6 @@ function TeamRow({
         onToggle={onToggleSelection}
         column={5}
       />
-      </div>
     </div>
   );
 }
@@ -231,8 +247,20 @@ function MatchupConsoleImpl({ matchup: m, profile, index, selectedKeys, onToggle
   const clvMove = m.sharp.awaySpread - m.spread.open;
   const syndicate = m.handle.moneyAway - m.handle.ticketsAway >= 0.2;
 
+  // Mobile-only accordion (discrete UI event; never touched by ticks).
+  const [telemetryOpen, setTelemetryOpen] = useState(false);
+  const articleRef = useRef<HTMLElement>(null);
+  const telemetryId = useId();
+  const toggleTelemetry = () => {
+    const next = !telemetryOpen;
+    setTelemetryOpen(next);
+    // Bring the expanded panel into the console's own (vertical) viewport.
+    if (next) requestAnimationFrame(() => articleRef.current?.scrollTo({ top: articleRef.current.scrollHeight, behavior: "smooth" }));
+  };
+
   return (
     <article
+      ref={articleRef}
       data-console
       data-index={index}
       aria-label={`${m.away.code} at ${m.home.code}`}
@@ -243,7 +271,7 @@ function MatchupConsoleImpl({ matchup: m, profile, index, selectedKeys, onToggle
       <div className="col-span-7 flex min-w-0 flex-col justify-between bg-[#0A101D]">
         {/* ── Top 72%: status header + execution rows ── */}
         <div className="flex min-h-0 flex-col lg:h-[72%]">
-          <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-[#162032] bg-[#05080F] px-4 font-mono lg:px-6 text-[11px] tracking-[0.16em] uppercase">
+          <header className="hidden h-11 shrink-0 items-center justify-between gap-3 border-b border-[#162032] bg-[#05080F] px-4 font-mono lg:flex lg:px-6 text-[11px] tracking-[0.16em] uppercase">
             <div className="flex min-w-0 items-center gap-3">
               <span aria-hidden className={`size-1.5 shrink-0 ${live ? "eq-pulse bg-[#CCFF00]" : "bg-[#475569]"}`} />
               <DecodeText text={`${m.id} // ${m.status.clock}`} index={0} className="truncate text-[#FAFAFA] tabular-nums" />
@@ -263,11 +291,47 @@ function MatchupConsoleImpl({ matchup: m, profile, index, selectedKeys, onToggle
           </div>
         </div>
 
-        {/* ── Bottom 28%: recessed telemetry ── */}
-        {/* Deep telemetry is desktop-only: on phones it cannot fit without crushing. */}
-        <div className="hidden h-[28%] flex-col justify-between border-t border-[#162032] bg-[#03050A] px-6 py-3.5 lg:flex">
+        {/* ── Below lg: VIEW TELEMETRY accordion toggle ── */}
+        <button
+          type="button"
+          onClick={toggleTelemetry}
+          aria-expanded={telemetryOpen}
+          aria-controls={telemetryId}
+          className={`flex h-11 shrink-0 items-center justify-between border-t border-[#162032] px-4 font-mono text-[10px] tracking-[0.22em] uppercase lg:hidden ${
+            telemetryOpen ? "bg-[#162032] text-[#CCFF00]" : "bg-[#05080F] text-[#8A99AD]"
+          }`}
+        >
+          <span>{telemetryOpen ? "[ − ] Hide Telemetry" : "[ + ] View Telemetry"}</span>
+          <span className={ev > 0 ? "text-[#CCFF00]" : "text-[#475569]"}>{ev > 0 ? `+${(ev * 100).toFixed(1)}% EV` : "05 Signals"}</span>
+        </button>
+
+        {/* ── Bottom 28%: recessed telemetry (always on lg; accordion body below lg) ── */}
+        <div
+          id={telemetryId}
+          className={`${telemetryOpen ? "flex" : "hidden"} flex-col gap-4 border-t border-[#162032] bg-[#03050A] px-4 py-4 lg:flex lg:h-[28%] lg:justify-between lg:gap-0 lg:px-6 lg:py-3.5`}
+        >
           <span className={TELEMETRY_LABEL}>Deep Telemetry {"//"} Quantitative Signal Breakdown</span>
-          <dl className="grid grid-cols-5 gap-4 divide-x divide-[#162032]">
+
+          {/* Mobile-only context the default view drops: game status + full team names. */}
+          <div className="space-y-2 border-b border-[#162032] pb-3 lg:hidden">
+            <div className="flex items-center justify-between gap-3 font-mono text-[10px] tracking-[0.16em] uppercase">
+              <DecodeText text={`${m.id} // ${m.status.clock}`} index={0} className="truncate text-[#FAFAFA] tabular-nums" />
+              <span className={`shrink-0 border px-2 py-0.5 ${m.liquidity === "THIN BOOK" ? "border-[#FF00FF] text-[#FF00FF]" : "border-[#162032] text-[#8A99AD]"}`}>
+                {m.liquidity}
+              </span>
+            </div>
+            {[m.away, m.home].map((t, i) => (
+              <div key={i} className="flex items-baseline justify-between gap-3">
+                <span className="truncate text-sm font-semibold text-[#FAFAFA]">
+                  <span className="mr-2 font-mono text-[10px] tracking-[0.2em] text-[#475569]">{i === 0 ? "AWY" : "HME"}</span>
+                  {t.name}
+                </span>
+                <span className="shrink-0 font-mono text-[11px] tracking-widest text-[#8A99AD] tabular-nums">{t.record}</span>
+              </div>
+            ))}
+          </div>
+
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-5 lg:gap-y-0 lg:divide-x lg:divide-[#162032]">
             <div className="min-w-0">
               <dt className={TELEMETRY_LABEL}>EV Edge</dt>
               <DecodeText
@@ -277,7 +341,7 @@ function MatchupConsoleImpl({ matchup: m, profile, index, selectedKeys, onToggle
                 className={`mt-1.5 ${TELEMETRY_VALUE} ${ev > 0 ? "text-[#CCFF00]" : "text-[#FF00FF]"}`}
               />
             </div>
-            <div className="min-w-0 pl-4">
+            <div className="min-w-0 lg:pl-4">
               <dt className={TELEMETRY_LABEL}>CLV Delta</dt>
               <DecodeText
                 as="dd"
@@ -286,7 +350,7 @@ function MatchupConsoleImpl({ matchup: m, profile, index, selectedKeys, onToggle
                 className={`mt-1.5 ${TELEMETRY_VALUE} ${clvMove === 0 ? "text-[#8A99AD]" : "text-[#FAFAFA]"}`}
               />
             </div>
-            <div className="min-w-0 pl-4">
+            <div className="min-w-0 lg:pl-4">
               <dt className={TELEMETRY_LABEL}>Handle Split</dt>
               <dd className="mt-2">
                 <div
@@ -306,7 +370,7 @@ function MatchupConsoleImpl({ matchup: m, profile, index, selectedKeys, onToggle
                 />
               </dd>
             </div>
-            <div className="min-w-0 pl-4">
+            <div className="min-w-0 lg:pl-4">
               <dt className={TELEMETRY_LABEL}>True Prob</dt>
               <DecodeText
                 as="dd"
@@ -315,7 +379,7 @@ function MatchupConsoleImpl({ matchup: m, profile, index, selectedKeys, onToggle
                 className={`mt-1.5 ${TELEMETRY_VALUE} ${trueP > bookP ? "text-[#CCFF00]" : "text-[#8A99AD]"}`}
               />
             </div>
-            <div className="min-w-0 pl-4">
+            <div className="col-span-2 min-w-0 lg:col-span-1 lg:pl-4">
               <dt className={TELEMETRY_LABEL}>Efficiency</dt>
               <DecodeText as="dd" text={m.keyEfficiency} index={4} className={`mt-1.5 ${TELEMETRY_VALUE} text-[#8A99AD]`} />
             </div>

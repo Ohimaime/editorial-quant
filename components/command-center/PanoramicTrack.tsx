@@ -9,11 +9,18 @@
  *    notch (see WHEEL_STEP) — raw `scrollLeft += deltaY` cannot work under
  *    `snap-mandatory`, because the browser re-snaps every sub-console nudge back
  *    to the current console;
- *  - ← / → arrow keys and the Tier 1 quick-jump pills (store `consoleJump`).
+ *  - ← / → arrow keys, the edge arrows (gutters on lg, poster on md) and the Tier 1 quick-jump
+ *    pills (store `consoleJump`).
  * An IntersectionObserver (threshold 0.6) reports the snapped console.
+ *
+ * Scroll affordance: from lg, the 10vw peek gutters carry an edge mask (the
+ * neighbouring console fades into the canvas) plus a 48px arrow; both drop on
+ * the side with nothing further to show. These live in a separate leaf
+ * (`TrackAffordances`) so the track itself never re-renders on a console change.
  */
 
 import { useEffect, useRef } from "react";
+import { ConsoleArrow } from "@/components/command-center/ConsoleArrow";
 import { MatchupConsole } from "@/components/command-center/MatchupConsole";
 import { CONSOLE_COUNT, getMarketData, type Selection } from "@/lib/mock-panoramic-data";
 import { useAppStore } from "@/store/useAppStore";
@@ -44,6 +51,7 @@ export function PanoramicTrack({ selectedKeys, onToggleSelection }: PanoramicTra
   const consoleJump = useAppStore((s) => s.consoleJump);
   const { matchups, profile } = getMarketData(market);
   const trackRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
 
   // ── Snapped-console detection ──
   useEffect(() => {
@@ -70,15 +78,24 @@ export function PanoramicTrack({ selectedKeys, onToggleSelection }: PanoramicTra
   }, [consoleJump]);
 
   // ── Vertical wheel → horizontal console steps (non-passive to own the event) ──
+  // Bound to the stage (track + edge arrows) so the wheel pans anywhere over it.
   useEffect(() => {
-    const track = trackRef.current;
-    if (!track) return;
+    const stage = stageRef.current;
+    if (!stage) return;
     let acc = 0;
     let lastStep = 0;
     let lastWheel = 0;
     const onWheel = (e: WheelEvent) => {
       // Horizontal intent (trackpad swipe, Shift+Wheel): let native scroll + snap handle it.
       if (Math.abs(e.deltaX) >= Math.abs(e.deltaY) || e.shiftKey) return;
+      // Below lg a console with its telemetry expanded scrolls vertically:
+      // let the wheel scroll it until it hits an end, then step consoles.
+      const c = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-console]") : null;
+      if (c && c.scrollHeight > c.clientHeight + 1) {
+        const canUp = c.scrollTop > 0;
+        const canDown = c.scrollTop + c.clientHeight < c.scrollHeight - 1;
+        if ((e.deltaY < 0 && canUp) || (e.deltaY > 0 && canDown)) return;
+      }
       e.preventDefault();
       const now = performance.now();
       if (now - lastWheel > WHEEL_IDLE_MS) acc = 0;
@@ -92,8 +109,8 @@ export function PanoramicTrack({ selectedKeys, onToggleSelection }: PanoramicTra
       const next = clamp(activeConsoleIndex + dir);
       if (next !== activeConsoleIndex) jumpToConsole(next);
     };
-    track.addEventListener("wheel", onWheel, { passive: false });
-    return () => track.removeEventListener("wheel", onWheel);
+    stage.addEventListener("wheel", onWheel, { passive: false });
+    return () => stage.removeEventListener("wheel", onWheel);
   }, []);
 
   // ── ← / → arrow keys ──
@@ -111,24 +128,53 @@ export function PanoramicTrack({ selectedKeys, onToggleSelection }: PanoramicTra
   }, []);
 
   return (
-    <div
-      ref={trackRef}
-      data-cursor-zone="telemetry-grid"
-      aria-label="Matchup consoles"
-      className="no-scrollbar flex h-[calc(100dvh-48px-128px)] w-full shrink-0 snap-x snap-mandatory scroll-smooth items-center gap-0 overflow-x-auto overflow-y-hidden px-0 lg:h-[calc(100dvh-48px-96px)] lg:gap-8 lg:px-[10vw]"
-    >
-      {matchups.map((m, i) => (
-        // Keyed by POSITION: a market switch swaps data inside the same console
-        // in 0ms; the track never jumps and the snapped console stays put.
-        <MatchupConsole
-          key={i}
-          index={i}
-          matchup={m}
-          profile={profile}
-          selectedKeys={selectedKeys}
-          onToggleSelection={onToggleSelection}
-        />
-      ))}
+    <div ref={stageRef} className="relative w-full shrink-0">
+      <div
+        ref={trackRef}
+        data-cursor-zone="telemetry-grid"
+        aria-label="Matchup consoles"
+        className="no-scrollbar flex h-[calc(100dvh-48px-128px)] w-full shrink-0 snap-x snap-mandatory scroll-smooth items-center gap-0 overflow-x-auto overflow-y-hidden px-0 lg:h-[calc(100dvh-48px-96px)] lg:gap-8 lg:px-[10vw]"
+      >
+        {matchups.map((m, i) => (
+          // Keyed by POSITION: a market switch swaps data inside the same console
+          // in 0ms; the track never jumps and the snapped console stays put.
+          <MatchupConsole
+            key={i}
+            index={i}
+            matchup={m}
+            profile={profile}
+            selectedKeys={selectedKeys}
+            onToggleSelection={onToggleSelection}
+          />
+        ))}
+      </div>
+      <TrackAffordances />
+    </div>
+  );
+}
+
+/* ── Scroll affordances (lg+): edge masks + gutter arrows ─────────────── */
+
+/**
+ * Leaf subscribed to `activeConsoleIndex`: masks + arrows update on a console
+ * change without re-rendering the track or its consoles.
+ *  - Masks cover the 10vw peek gutters, fading the neighbouring console into
+ *    the canvas: the cue that content continues off-screen. Each drops on the
+ *    side with nothing further to show.
+ *  - Arrows sit centred in the gutters. Below lg the consoles are full-width,
+ *    so the arrows move into each console's poster (see MatchupConsole).
+ */
+function TrackAffordances() {
+  const active = useAppStore((s) => s.activeConsoleIndex);
+  const atStart = active <= 0;
+  const atEnd = active >= CONSOLE_COUNT - 1;
+
+  return (
+    <div className="pointer-events-none absolute inset-0 hidden lg:block">
+      {!atStart && <div aria-hidden className="absolute inset-y-0 left-0 w-[10vw] bg-gradient-to-r from-[#05080F] to-transparent" />}
+      {!atEnd && <div aria-hidden className="absolute inset-y-0 right-0 w-[10vw] bg-gradient-to-l from-[#05080F] to-transparent" />}
+      <ConsoleArrow dir={-1} disabled={atStart} className="absolute top-1/2 left-[calc(5vw-24px)] flex -translate-y-1/2" />
+      <ConsoleArrow dir={1} disabled={atEnd} className="absolute top-1/2 right-[calc(5vw-24px)] flex -translate-y-1/2" />
     </div>
   );
 }

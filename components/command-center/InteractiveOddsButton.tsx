@@ -169,8 +169,9 @@ function InteractiveOddsButtonImpl({ selection, label, line, selected, onToggle,
         )}
       </span>
 
-      {/* Last tick: 4px triangle + Δ implied probability (percentage points). */}
-      <span className="relative flex h-3 items-center justify-between gap-2 font-mono text-[10px] whitespace-nowrap tabular-nums">
+      {/* Last tick: 4px triangle + Δ implied probability (percentage points).
+          Desktop only — below lg the EV signal lives in the VIEW TELEMETRY accordion. */}
+      <span className="relative hidden h-3 lg:flex items-center justify-between gap-2 font-mono text-[10px] whitespace-nowrap tabular-nums">
         {tick.dir !== 0 ? (
           <span
             className={`flex items-center gap-1 ${

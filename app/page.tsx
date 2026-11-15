@@ -5,6 +5,7 @@ import { ExecutionDock } from "@/components/command-center/ExecutionDock";
 import { PanoramicTrack } from "@/components/command-center/PanoramicTrack";
 import { TopStatusMarquee } from "@/components/command-center/TopStatusMarquee";
 import { QuantGlossary } from "@/components/dashboard/QuantGlossary";
+import { WelcomeBriefing } from "@/components/dashboard/WelcomeBriefing";
 import { TerminalBootLoader } from "@/components/motion/TerminalBootLoader";
 import { DEFAULT_SLIP_KEYS, selectionByKey, type Selection } from "@/lib/mock-panoramic-data";
 
@@ -40,6 +41,7 @@ export default function Home() {
       <PanoramicTrack selectedKeys={selectedKeys} onToggleSelection={toggleSelection} />
       <ExecutionDock selections={slip} onRemove={removeSelection} />
       <QuantGlossary />
+      <WelcomeBriefing />
     </div>
   );
 }
